@@ -9,6 +9,7 @@ snakemake.utils.min_version("7")
 
 # Load config file
 configfile: "config/cappseq_snv_pipeline.yaml"
+configpath = "config/cappseq_snv_pipeline.yaml"
 
 # Check that the config file has all the required parameters
 pathkeys = {"samplelist", "basedir", "ref_genome", "hotspots_vcf", "capture_space", "ensembl", "unmatched_normal", "custom_enst", "vep_data"}
