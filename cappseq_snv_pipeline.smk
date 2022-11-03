@@ -10,6 +10,18 @@ snakemake.utils.min_version("7")
 # Load config file
 configfile: "config/cappseq_snv_pipeline.yaml"
 
+# Check that the config file has all the required parameters
+pathkeys = {"samplelist", "basedir", "ref_genome", "hotspots_vcf", "capture_space", "ensembl", "unmatched_normal", "custom_enst", "vep_data"}
+for ckey, attribute in config["cappseq_snv_workflow"].items():
+    if attribute == "__UPDATE__":
+        # Placeholder value in config. Warn user
+        raise AttributeError(f"\'__UPDATE__\' found for \'{ckey}\' in config file \'{configpath}\'. Please ensure the config file is updated with parameters relevant for your analysis")
+    # Check that required filepaths exist
+    if ckey in pathkeys:
+        if not os.path.exists(attribute):
+            raise AttributeError(f"Unable to locate \'{attribute}\' for key \'{ckey}\' in config file \'{configpath}\': No such file or directory")
+
+
 # Load input files
 samplelist = config["cappseq_snv_pipeline"]["samplelist"]
 
