@@ -23,3 +23,8 @@ cappseq_snv_pipeline:
     # Post-filtering
     exac_max_freq: 0.01
     blacklist: "resources/capture-hg38.clean_blacklist.txt"
+    
+    # Mask positions with a high incidence of N bases
+    mask_script: "src/mask_n_sites.py"
+    mask_threshold: "0.05"  # Fraction of N bases at a position to mask it
+    mask_count: "8"  # Minimum number of N bases required to mask a position

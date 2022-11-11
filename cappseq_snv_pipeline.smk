@@ -102,27 +102,50 @@ rule filter_sage:
         bcftools view -f PASS {input.vcf} -O vcf -o {output.vcf}
         """
 
-# Restrict to the captured regions
+# Flag positions with a high incidence of masked bases
+rule flag_masked_pos:
+    input:
+        bam = lambda w: samplepaths[w.sample]
+    output:
+        bed_raw = temp(config["cappseq_snv_pipeline"]["base_dir"] + "/03-masked_pos/{sample}.maskedpos.bed"),
+        bed = config["cappseq_snv_pipeline"]["base_dir"] + "/03-masked_pos/{sample}.maskedpos.bed.gz"
+    params:
+        script = config["cappseq_snv_pipeline"]["mask_script"],
+        n_threshold = config["cappseq_snv_pipeline"]["mask_threshold"],
+        min_count = config["cappseq_snv_pipeline"]["mask_count"],
+        panel_regions = config["cappseq_snv_pipeline"]["capture_space"]
+    conda:
+        "envs/bcftools.yaml"
+    log:
+        config["cappseq_snv_pipeline"]["base_dir"] + "/logs/{sample}.maskpos.log"
+    shell:
+        """
+        {params.script} --input {input.bam} --regions {params.panel_regions} --output {output.bed_raw} --count {params.min_count} --fraction {params.n_threshold} > {log} &&
+        bgzip -c {output.bed_raw} > {output.bed} && tabix -p bed {output.bed} >> {log}
+        """
+
+# Restrict to the captured regions, remove backlisted positions
 rule restrict_to_capture:
     input:
-        vcf = rules.filter_sage.output.vcf
+        vcf = rules.filter_sage.output.vcf,
+        bed = rules.flag_masked_pos.output.bed
     output:
-        vcf = config["cappseq_snv_pipeline"]["base_dir"] + "/03-capturespace/{sample}.capspace.vcf"
+        vcf = config["cappseq_snv_pipeline"]["base_dir"] + "/04-capturespace/{sample}.capspace.vcf"
     params:
         panel_regions = config["cappseq_snv_pipeline"]["capture_space"]
     conda:
         "envs/bcftools.yaml"
     shell:
         """
-        bcftools view -T {params.panel_regions} -O vcf -o {output.vcf} {input.vcf}
+        bedtools intersect -a {input.vcf} -header -b {params.panel_regions} | bedtools intersect -a - -header -b {input.bed} -v | bcftools filter -e 'ALT=\"N\"' -O vcf -o {output.vcf}
         """
 
 rule vcf2maf_annotate:
     input:
         vcf = rules.restrict_to_capture.output.vcf
     output:
-        vep_vcf = temp(config["cappseq_snv_pipeline"]["base_dir"] + "/03-capturespace/{sample}.capspace.vep.vcf"),
-        maf = config["cappseq_snv_pipeline"]["base_dir"] + "/04-MAFs/{sample}.sage.maf"
+        vep_vcf = temp(config["cappseq_snv_pipeline"]["base_dir"] + "/04-capturespace/{sample}.capspace.vep.vcf"),
+        maf = config["cappseq_snv_pipeline"]["base_dir"] + "/05-MAFs/{sample}.sage.maf"
     params:
         custom_enst = config["cappseq_snv_pipeline"]["custom_enst"],
         vep_data = config["cappseq_snv_pipeline"]["vep_data"],

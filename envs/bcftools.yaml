@@ -3,3 +3,6 @@ channels:
   - conda-forge
 dependencies:
   - bcftools < 1.14
+  - bedtools
+  - python-sortedcontainers
+  - pysam
