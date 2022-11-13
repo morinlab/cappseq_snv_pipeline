@@ -12,7 +12,7 @@ configfile: "config/cappseq_snv_pipeline.yaml"
 configpath = "config/cappseq_snv_pipeline.yaml"
 
 # Check that the config file has all the required parameters
-pathkeys = {"samplelist", "basedir", "ref_genome", "hotspots_vcf", "capture_space", "ensembl", "unmatched_normal", "custom_enst", "vep_data"}
+pathkeys = {"samplelist", "basedir", "ref_genome", "hotspots_vcf", "capture_space", "ensembl", "unmatched_normal", "custom_enst", "vep_data", "fgbio_jar"}
 for ckey, attribute in config["cappseq_snv_pipeline"].items():
     if attribute == "__UPDATE__":
         # Placeholder value in config. Warn user
@@ -28,6 +28,7 @@ samplelist = config["cappseq_snv_pipeline"]["samplelist"]
 
 samples = []
 samplepaths = {}
+sample_uncons = {}
 
 with open(samplelist) as f:
     i = 0
@@ -43,8 +44,9 @@ with open(samplelist) as f:
         try:
             sample_name = cols[0]
             sample_path = cols[1]
+            unmerged_path = cols[2]
         except IndexError as e:
-            raise AttributeError(f"Unable to parse line {i} of sample file \'{samplelist}\': Expected two columns specifying sample name and file path") from e
+            raise AttributeError(f"Unable to parse line {i} of sample file \'{samplelist}\': Expected three columns specifying sample name, consensus BAM path, and pre-consensus BAM path") from e
         # Sanity check that the filepath exists
         if not os.path.exists(sample_path):
             raise AttributeError(f"Unable to locate BAM/CRAM file \'{sample_path}\' for sample \'{sample_name}\': No such file or directory")
@@ -53,6 +55,7 @@ with open(samplelist) as f:
             raise AttributeError(f"Duplicate sample name \'{sample_name}\' detected in sample file \'{samplelist}\'")
         samples.append(sample_name)
         samplepaths[sample_name] = sample_path
+        sample_uncons[sample_name] = unmerged_path
 
 # Run variant calling
 rule run_sage:
@@ -137,8 +140,35 @@ rule restrict_to_capture:
         "envs/bcftools.yaml"
     shell:
         """
-        bedtools intersect -a {input.vcf} -header -b {params.panel_regions} | bedtools intersect -a - -header -b {input.bed} -v | bcftools filter -e 'ALT=\"N\"' -O vcf -o {output.vcf}
+        bedtools intersect -a {input.vcf} -header -b {params.panel_regions} | bedtools intersect -a - -header -b {input.bed} -v | bcftools filter -e 'ALT=\"N\"' -O vcf | bcftools norm -m +any -O vcf -o {output.vcf}
         """
+
+# Generate review BAM files containing only the reads supporting these variants
+rule review_consensus_reads:
+    input:
+        bam_cons = lambda w: samplepaths[w.sample],
+        bam_uncons = lambda w: sample_uncons[w.sample],
+        vcf = rules.restrict_to_capture.output.vcf
+    output:
+        tmp_sort = temp(config["cappseq_snv_pipeline"]["base_dir"] + "/06-supportingreads/{sample}/{sample}.umigrouped.sort.bam"),
+        tmp_index = temp(config["cappseq_snv_pipeline"]["base_dir"] + "/06-supportingreads/{sample}/{sample}.umigrouped.sort.bam.bai"),
+        consensus_bam = config["cappseq_snv_pipeline"]["base_dir"] + "/06-supportingreads/{sample}/{sample}.consensus.bam",
+        grouped_bam = config["cappseq_snv_pipeline"]["base_dir"] + "/06-supportingreads/{sample}/{sample}.grouped.bam"
+    threads: 2
+    params:
+        fgbio = config["cappseq_snv_pipeline"]["fgbio_jar"],
+        ref_genome = config["cappseq_snv_pipeline"]["ref_genome"],
+        outdir = config["cappseq_snv_pipeline"]["base_dir"] + "/06-supportingreads/{sample}/"
+    conda:
+        "envs/fgbio.yaml"
+    log:
+        config["cappseq_snv_pipeline"]["base_dir"] + "/logs/{sample}.reviewconsensusvariant.log"
+    shell:
+        """
+        samtools sort -@ 2 {input.bam_uncons} > {output.tmp_sort} && samtools index -@ 2 {output.tmp_sort} &&
+        java -jar {params.fgbio} ReviewConsensusVariants --input {input.vcf} --consensus {input.bam_cons} --grouped-bam {output.tmp_sort} --ref {params.ref_genome} --output {params.outdir}/{wildcards.sample} --sample {wildcards.sample} 2>&1 > {log}
+        """
+
 
 rule vcf2maf_annotate:
     input:
@@ -210,8 +240,28 @@ rule filter_maf:
 
             blacklist_maf.to_csv(output.maf, sep="\t", header=True, index = False)
 
+# Generate IGV screenshots of these variants
+rule igv_screenshot_variants:
+    input:
+        full_bam = lambda w: samplepaths[w.sample],
+        consensus_bam = rules.review_consensus_reads.output.consensus_bam,
+        grouped_bam = rules.review_consensus_reads.output.grouped_bam,
+        maf = rules.filter_maf.output.maf
+    output:
+        outdir = directory(config["cappseq_snv_pipeline"]["base_dir"] + "/07-IGV/{sample}/")
+    params:
+        igv_script = config["cappseq_snv_pipeline"]["igv_script"],
+        genome_build = "hg38" if config["cappseq_snv_pipeline"]["ref_genome_ver"] == "GRCh38" else "37"
+    conda:
+        "envs/igv.yaml"
+    log:
+        config["cappseq_snv_pipeline"]["base_dir"] + "/logs/{sample}.igv.log"
+    shell:
+        """
+        python {params.igv_script} -m {input.maf} -b {input.full_bam} {input.consensus_bam} {input.grouped_bam} --genome_build {params.genome_build} -o {output.outdir} 2> {log}
+        """
 
 rule all:
     input:
-        expand(rules.filter_maf.output.maf, sample = samples)
+        expand(rules.igv_screenshot_variants.output.outdir, sample = samples)
     default_target: True

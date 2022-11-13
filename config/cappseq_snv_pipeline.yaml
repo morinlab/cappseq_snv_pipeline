@@ -20,6 +20,16 @@ cappseq_snv_pipeline:
     vep_data: "__UPDATE__"
     centre: "morin_lab"
 
+    # fgbio executable, pulled and compiled from GitHub
+    # as the current version on bioconda has a bug in
+    # ReviewConsensusVariants
+    fgbio_jar: "__UPDATE__"
+
+    # Mask positions with a high incidence of N bases
+    mask_script: "src/mask_n_sites.py"
+    mask_threshold: "0.05"  # Fraction of N bases at a position to mask it
+    mask_count: "8"  # Minimum number of N bases required to mask a position
+
     # Post-filtering
     exac_max_freq: 0.01
     blacklist: "resources/capture-hg38.clean_blacklist.txt"
@@ -28,3 +38,6 @@ cappseq_snv_pipeline:
     mask_script: "src/mask_n_sites.py"
     mask_threshold: "0.05"  # Fraction of N bases at a position to mask it
     mask_count: "8"  # Minimum number of N bases required to mask a position
+
+    # IGV screenshot batch script
+    igv_script: "src/generate_igv_screenshots.py"
