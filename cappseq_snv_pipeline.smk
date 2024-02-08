@@ -2,6 +2,7 @@
 
 import os
 import pandas
+import pyfaidx
 import numpy
 import snakemake
 
@@ -28,6 +29,8 @@ samplelist = config["cappseq_snv_pipeline"]["samplelist"]
 
 samples = []
 samplepaths = {}
+normals = {}
+normal_ids = {}
 sample_uncons = {}
 
 with open(samplelist) as f:
@@ -45,22 +48,34 @@ with open(samplelist) as f:
             sample_name = cols[0]
             sample_path = cols[1]
             unmerged_path = cols[2]
+            normal_path = cols[3]
         except IndexError as e:
             raise AttributeError(f"Unable to parse line {i} of sample file \'{samplelist}\': Expected three columns specifying sample name, consensus BAM path, and pre-consensus BAM path") from e
         # Sanity check that the filepath exists
         if not os.path.exists(sample_path):
+            continue
             raise AttributeError(f"Unable to locate BAM/CRAM file \'{sample_path}\' for sample \'{sample_name}\': No such file or directory")
-        # Store these samples
+        if not os.path.exists(normal_path):
+            continue
+            raise AttributeError(f"Unable to locate normal BAM/CRAM file \'{normal_path}\' for sample \'{sample_name}\': No such file or directory")
+        # Obtain the path to the normal sample
         if sample_name in samples:
             raise AttributeError(f"Duplicate sample name \'{sample_name}\' detected in sample file \'{samplelist}\'")
         samples.append(sample_name)
         samplepaths[sample_name] = sample_path
         sample_uncons[sample_name] = unmerged_path
+        normals[sample_name] = normal_path
+        # Store the sample name of the normal (as this will be different than the ctDNA).
+        normal_name = os.path.basename(normal_path)
+        normal_name = normal_name.split(".")[0]
+        normal_ids[sample_name] = normal_name
+        
 
 # Run variant calling
 rule run_sage:
     input:
-        bam = lambda w: samplepaths[w.sample]
+        tbam = lambda w: samplepaths[w.sample],
+        nbam = lambda w: normals[w.sample],
     output:
         vcf = config["cappseq_snv_pipeline"]["base_dir"] + "/01-SAGE/{sample}/{sample}.sage.vcf"
     params:
@@ -70,26 +85,31 @@ rule run_sage:
         hotspots_vcf = config["cappseq_snv_pipeline"]["hotspots_vcf"],
         panel_regions = config["cappseq_snv_pipeline"]["capture_space"],
         ensembl = config["cappseq_snv_pipeline"]["ensembl"],
-        # Normal
-        normal_bam = config["cappseq_snv_pipeline"]["unmatched_normal"],
-        normal_name = config["cappseq_snv_pipeline"]["normal_name"],
         # Miscellaneous
+        normal_name = lambda w: normal_ids[w.sample],
         max_depth = config["cappseq_snv_pipeline"]["max_depth"],
-        min_map = config["cappseq_snv_pipeline"]["min_map_qual"]
+        min_map = config["cappseq_snv_pipeline"]["min_map_qual"],
+        hard_vaf_cutoff = config["cappseq_snv_pipeline"]["tumor_min_vaf"],
+        soft_vaf_cutoff = config["cappseq_snv_pipeline"]["tumor_soft_min_vaf"],
+        min_norm_depth = 7
     threads: 4
     log:
         config["cappseq_snv_pipeline"]["base_dir"] + "/logs/{sample}.sage_run.log"
     conda:
         "envs/sage.yaml"
     shell:
-        """SAGE -tumor {wildcards.sample} -tumor_bam {input.bam} \
+        """SAGE -tumor {wildcards.sample} -tumor_bam {input.tbam} \
         -out {output.vcf} -ref_genome {params.ref_genome} \
         -ref_genome_version {params.ref_genome_version} \
         -hotspots {params.hotspots_vcf} -panel_bed {params.panel_regions} \
         -high_confidence_bed {params.panel_regions} \
         -ensembl_data_dir {params.ensembl} \
-        -reference_bam {params.normal_bam} -reference {params.normal_name} \
+        -reference_bam {input.nbam} -reference {params.normal_name} \
         -max_read_depth {params.max_depth} -min_map_quality {params.min_map} \
+        -hard_min_tumor_vaf {params.hard_vaf_cutoff} -hard_min_tumor_raw_alt_support 4 \
+        -panel_min_tumor_vaf {params.soft_vaf_cutoff} -panel_min_germline_depth {params.min_norm_depth} \
+        -hotspot_min_germline_depth {params.min_norm_depth} \
+        -high_confidence_min_tumor_vaf {params.soft_vaf_cutoff} \
         -bqr_min_map_qual {params.min_map} -threads {threads} 2>&1 > {log}
         """
 
@@ -140,7 +160,7 @@ rule restrict_to_capture:
         "envs/bcftools.yaml"
     shell:
         """
-        bedtools intersect -a {input.vcf} -header -b {params.panel_regions} | bedtools intersect -a - -header -b {input.bed} -v | bcftools filter -e 'ALT=\"N\"' -O vcf | bcftools norm -m +any -O vcf -o {output.vcf}
+        bedtools intersect -a {input.vcf} -header -b {params.panel_regions} | bedtools intersect -a - -header -b {input.bed} -v | awk -F '\\t' '$4 !~ /N/ && $5 !~ /N/' | bcftools norm -m +any -O vcf -o {output.vcf}
         """
 
 # Generate review BAM files containing only the reads supporting these variants
@@ -180,7 +200,7 @@ rule vcf2maf_annotate:
         custom_enst = config["cappseq_snv_pipeline"]["custom_enst"],
         vep_data = config["cappseq_snv_pipeline"]["vep_data"],
         centre = config["cappseq_snv_pipeline"]["centre"],
-        normal_name = config["cappseq_snv_pipeline"]["normal_name"],
+        normal_name = lambda w: normal_ids[w.sample],
         ref_fasta = config["cappseq_snv_pipeline"]["ref_genome"],
         ref_ver = config["cappseq_snv_pipeline"]["ref_genome_ver"]
     threads: 2
@@ -199,12 +219,92 @@ rule vcf2maf_annotate:
         --maf-center {params.centre} 2> {log} >> {log}
         """
 
+
+rule augment_ssm:
+    input:
+        maf = rules.vcf2maf_annotate.output.maf,
+        bam = lambda w: samplepaths[w.sample]
+    output:
+        maf = config["cappseq_snv_pipeline"]["base_dir"] + "/08-augmentssm/{sample}.sage.augment.maf"
+    threads: 2
+    params:
+        script = "src/augment_ssm.py"
+    shell: """
+    python {params.script} \
+    --bam {input.bam} \
+    --maf {input.maf} \
+    --output {output.maf} \
+    --threads {threads}
+    """
+
+
+rule filter_alt_supp:
+    input:
+        maf = rules.augment_ssm.output.maf
+    output:
+        maf = config["cappseq_snv_pipeline"]["base_dir"] + "/09-altsupp/{sample}.sage.filtered.maf"
+    params:
+        min_alt_depth = config["cappseq_snv_pipeline"]["min_alt_depth"],
+        min_germline_depth = config["cappseq_snv_pipeline"]["min_germline_depth"],
+        tumor_af_diff = config["cappseq_snv_pipeline"]["tumor_af_diff"]
+    shell: """
+    awk -F '\t' '$42>={params.min_alt_depth} && $43>{params.min_germline_depth}' {input.maf} | \
+    awk -F '\t' '$1 != "DNMT3A" || $42/$40 >= {params.tumor_af_diff} * $45/$43' | \
+    grep -v ^HLA | grep -v ^FCGR > {output.maf}
+    """
+
+rule filter_repetitive_seq:
+    """
+    Remove mutations which are adjacent to a repetitive sequence.
+    """
+    input:
+        maf = rules.filter_alt_supp.output.maf
+    output:
+        maf = config["cappseq_snv_pipeline"]["base_dir"] + "/10-filter_repeat/{sample}.sage.repeat_filt.maf"
+    params:
+        max_repeat_len = 6,
+        ref_fasta = config["cappseq_snv_pipeline"]["ref_genome"]
+    run:
+
+        refseq = pyfaidx.Fasta(params.ref_fasta)
+        with open(input.maf) as f, open(output.maf, "w") as o:
+            for line in f:
+                if line.startswith("#") or line.startswith("Hugo_Symbol"):
+                    # Skip header lines.
+                    o.write(line)
+                    continue
+                cols = line.split("\t")
+                # Get alternate allele
+                alt = cols[12]
+                if alt == "-":
+                    alt = cols[10]
+                if len(alt) > 1:  # Handle large indels
+                    alt = alt[0]
+                # Get position of variant.
+                
+                pos = int(cols[6]) - 1  # Offset by 1 for MAF vs pyfaidx sequence.
+                chrom = cols[4]
+
+                # Determine length of repeat via reference sequence.
+                repeat_len = 0
+                while True:
+                    pos += 1
+                    base = refseq[chrom][pos]
+                    if base != alt or repeat_len > params.max_repeat_len:
+                        break
+                    repeat_len += 1
+
+                if repeat_len < params.max_repeat_len:
+                    # Not a repeat (or not sufficiently long)
+                    o.write(line)
+
+
 # Filter output via GenomAD frequencies and position blacklist
 rule filter_maf:
     input:
-        maf = rules.vcf2maf_annotate.output.maf
+        maf = rules.filter_repetitive_seq.output.maf
     output:
-        maf = config["cappseq_snv_pipeline"]["base_dir"] + "/99-final/{sample}.sage.filtered.maf"
+        maf = config["cappseq_snv_pipeline"]["base_dir"] + "/99-final/{sample}.sage.blacklist.maf"
     params:
         exac_freq = float(config["cappseq_snv_pipeline"]["exac_max_freq"]),
         blacklist = config["cappseq_snv_pipeline"]["blacklist"],
@@ -240,28 +340,31 @@ rule filter_maf:
 
             blacklist_maf.to_csv(output.maf, sep="\t", header=True, index = False)
 
+
 # Generate IGV screenshots of these variants
 rule igv_screenshot_variants:
     input:
-        full_bam = lambda w: samplepaths[w.sample],
-        consensus_bam = rules.review_consensus_reads.output.consensus_bam,
-        grouped_bam = rules.review_consensus_reads.output.grouped_bam,
+        tbam = lambda w: samplepaths[w.sample],
+        nbam = lambda w: normals[w.sample],
         maf = rules.filter_maf.output.maf
     output:
-        outdir = directory(config["cappseq_snv_pipeline"]["base_dir"] + "/07-IGV/{sample}/")
+        html = config["cappseq_snv_pipeline"]["base_dir"] + "/07-IGV/{sample}_report.html"
     params:
-        igv_script = config["cappseq_snv_pipeline"]["igv_script"],
-        genome_build = "hg38" if config["cappseq_snv_pipeline"]["ref_genome_ver"] == "GRCh38" else "37"
+        refgenome = config["cappseq_snv_pipeline"]["ref_genome"],
+        cytoband = config["cappseq_snv_pipeline"]["cytoband"],
+        genes =  config["cappseq_snv_pipeline"]["genetrack"],
+        sample_name = lambda w: w.sample
     conda:
         "envs/igv.yaml"
     log:
         config["cappseq_snv_pipeline"]["base_dir"] + "/logs/{sample}.igv.log"
     shell:
         """
-        python {params.igv_script} -m {input.maf} -b {input.full_bam} {input.consensus_bam} {input.grouped_bam} --genome_build {params.genome_build} -o {output.outdir} 2> {log}
+        create_report --fasta {params.refgenome} --type mutation --tracks {input.tbam} {input.nbam} {params.genes} --flanking 1500 --output {output.html} --standalone --title {params.sample_name} --ideogram {params.cytoband} {input.maf} > {log}
         """
 
 rule all:
     input:
-        expand(rules.igv_screenshot_variants.output.outdir, sample = samples)
+        expand(rules.filter_maf.output.maf, sample = samples),
+        expand(rules.igv_screenshot_variants.output.html, sample=samples)
     default_target: True

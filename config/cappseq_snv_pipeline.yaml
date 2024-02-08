@@ -11,9 +11,10 @@ cappseq_snv_pipeline:
     capture_space: "__UPDATE__"
     ensembl: "resources/ensembl_cache/38/"
     unmatched_normal: "__UPDATE__"
-    normal_name: "normal"
     max_depth: "100000"
     min_map_qual: "40"
+    tumor_min_vaf: "0.008"
+    tumor_soft_min_vaf: "0.012"
 
     # vcf2maf specific parameters
     custom_enst: "resources/custom_enst.hg38.txt"
@@ -33,11 +34,16 @@ cappseq_snv_pipeline:
     # Post-filtering
     exac_max_freq: 0.01
     blacklist: "resources/capture-hg38.clean_blacklist.txt"
-    
+    min_alt_depth: 5
+    min_germline_depth: 8
+    max_germline_alt: 6
+    tumor_af_diff: 3  # VAF must be at least this much higher in the tumor than the normal
+
     # Mask positions with a high incidence of N bases
     mask_script: "src/mask_n_sites.py"
     mask_threshold: "0.05"  # Fraction of N bases at a position to mask it
     mask_count: "8"  # Minimum number of N bases required to mask a position
 
-    # IGV screenshot batch script
-    igv_script: "src/generate_igv_screenshots.py"
+    # IGV screenshot annotation sources.
+    cytoband: "resources/cytoband.hg38.txt"
+    genetrack: "resources/gencode.v23.gtf.gz"
