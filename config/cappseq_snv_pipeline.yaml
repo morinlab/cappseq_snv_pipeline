@@ -1,9 +1,14 @@
 cappseq_snv_pipeline:
     # General parameters
-    samplelist: "config/samples.tsv"
+    samplesheet: "config/samples.tsv"
     base_dir: "__UPDATE__"
     ref_genome: "__UPDATE__" 
     ref_genome_ver: "GRCh38"  # GRCh37 if GRCh37/hg19, GRCh38 if GRCh38/hg38
+
+    tumour_bam_dir: "__UPDATE__"
+    umi_bam_dir: "__UPDATE__"
+    normal_bam_dir: "__UPDATE__"
+    pipeline_dir: "__UPDATE__"
 
 
     # SAGE specific parameters

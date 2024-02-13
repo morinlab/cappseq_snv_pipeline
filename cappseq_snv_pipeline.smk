@@ -1,75 +1,31 @@
 #!/usr/bin/env snakemake
 
 import os
-import pandas
+import pandas as pd
 import pyfaidx
 import numpy
 import snakemake
 
 snakemake.utils.min_version("7")
 
-# Load config file
-configfile: "config/cappseq_snv_pipeline.yaml"
-configpath = "config/cappseq_snv_pipeline.yaml"
-
-# Check that the config file has all the required parameters
-pathkeys = {"samplelist", "basedir", "ref_genome", "hotspots_vcf", "capture_space", "ensembl", "unmatched_normal", "custom_enst", "vep_data", "fgbio_jar"}
-for ckey, attribute in config["cappseq_snv_pipeline"].items():
-    if attribute == "__UPDATE__":
-        # Placeholder value in config. Warn user
-        raise AttributeError(f"\'__UPDATE__\' found for \'{ckey}\' in config file \'{configpath}\'. Please ensure the config file is updated with parameters relevant for your analysis")
-    # Check that required filepaths exist
-    if ckey in pathkeys:
-        if not os.path.exists(attribute):
-            raise AttributeError(f"Unable to locate \'{attribute}\' for key \'{ckey}\' in config file \'{configpath}\': No such file or directory")
-
+import sys
+sys.path.append(config['cappseq_snv_pipeline']['pipeline_dir'])
+import src.SampleInfo as SI
 
 # Load input files
-samplelist = config["cappseq_snv_pipeline"]["samplelist"]
+samplesheet = pd.read_csv(config["cappseq_snv_pipeline"]["samplesheet"], sep="\t")
 
-samples = []
-samplepaths = {}
-normals = {}
-normal_ids = {}
-sample_uncons = {}
+SampleInfo = SI.SampleInfo(samplesheet, 
+                config["cappseq_snv_pipeline"]["tumour_bam_dir"],
+                config["cappseq_snv_pipeline"]["umi_bam_dir"],
+                config["cappseq_snv_pipeline"]["normal_bam_dir"],)
+# can remove this by using object through out, do one day
+samples = SampleInfo.samples
+samplepaths = SampleInfo.samplepaths
+normals = SampleInfo.normals
+normal_ids = SampleInfo.normal_ids
+sample_uncons = SampleInfo.sample_uncons
 
-with open(samplelist) as f:
-    i = 0
-    for line in f:
-        # Assuming a two-column sample file, with sample name as column 1, and
-        # a BAM/CRAM path as column 2
-        i += 1
-        # Ignore comment lines
-        if line.startswith("#"):
-            continue
-        line = line.rstrip("\n").rstrip("\r")
-        cols = line.split("\t")
-        try:
-            sample_name = cols[0]
-            sample_path = cols[1]
-            unmerged_path = cols[2]
-            normal_path = cols[3]
-        except IndexError as e:
-            raise AttributeError(f"Unable to parse line {i} of sample file \'{samplelist}\': Expected three columns specifying sample name, consensus BAM path, and pre-consensus BAM path") from e
-        # Sanity check that the filepath exists
-        if not os.path.exists(sample_path):
-            continue
-            raise AttributeError(f"Unable to locate BAM/CRAM file \'{sample_path}\' for sample \'{sample_name}\': No such file or directory")
-        if not os.path.exists(normal_path):
-            continue
-            raise AttributeError(f"Unable to locate normal BAM/CRAM file \'{normal_path}\' for sample \'{sample_name}\': No such file or directory")
-        # Obtain the path to the normal sample
-        if sample_name in samples:
-            raise AttributeError(f"Duplicate sample name \'{sample_name}\' detected in sample file \'{samplelist}\'")
-        samples.append(sample_name)
-        samplepaths[sample_name] = sample_path
-        sample_uncons[sample_name] = unmerged_path
-        normals[sample_name] = normal_path
-        # Store the sample name of the normal (as this will be different than the ctDNA).
-        normal_name = os.path.basename(normal_path)
-        normal_name = normal_name.split(".")[0]
-        normal_ids[sample_name] = normal_name
-        
 
 # Run variant calling
 rule run_sage:
@@ -323,7 +279,7 @@ rule filter_maf:
         blacklist_pos = set(blacklist_pos)
 
         # Load variants
-        in_maf = pandas.read_csv(input.maf, sep ="\t", comment = "#")
+        in_maf = pd.read_csv(input.maf, sep ="\t", comment = "#")
         if in_maf.shape[0] == 0:  # Empty input MAF file
             in_maf.to_csv(output.maf, sep="\t", header=True, index = False)
         else:
