@@ -38,9 +38,9 @@ rule run_sage:
         ref_genome = config["cappseq_snv_pipeline"]["ref_genome"],
         ref_genome_version = "38" if config["cappseq_snv_pipeline"]["ref_genome_ver"] == "GRCh38" else "37",  # Should make more robust
         # Panel regions
-        hotspots_vcf = config["cappseq_snv_pipeline"]["hotspots_vcf"],
+        hotspots_vcf = os.path.join(config["cappseq_snv_pipeline"]["pipeline_dir"], "resources/KnownHotspots.vcf.gz"),
         panel_regions = config["cappseq_snv_pipeline"]["capture_space"],
-        ensembl = config["cappseq_snv_pipeline"]["ensembl"],
+        ensembl = os.path.join(config["cappseq_snv_pipeline"]["pipeline_dir"], "resources/ensembl_cache/38/"),
         # Miscellaneous
         normal_name = lambda w: normal_ids[w.sample],
         max_depth = config["cappseq_snv_pipeline"]["max_depth"],
@@ -89,7 +89,7 @@ rule flag_masked_pos:
         bed_raw = temp(config["cappseq_snv_pipeline"]["base_dir"] + "/03-masked_pos/{sample}.maskedpos.bed"),
         bed = config["cappseq_snv_pipeline"]["base_dir"] + "/03-masked_pos/{sample}.maskedpos.bed.gz"
     params:
-        script = config["cappseq_snv_pipeline"]["mask_script"],
+        script = os.path.join(config["cappseq_snv_pipeline"]["pipeline_dir"], "src/mask_n_sites.py"),
         n_threshold = config["cappseq_snv_pipeline"]["mask_threshold"],
         min_count = config["cappseq_snv_pipeline"]["mask_count"],
         panel_regions = config["cappseq_snv_pipeline"]["capture_space"]
@@ -132,7 +132,7 @@ rule review_consensus_reads:
         grouped_bam = config["cappseq_snv_pipeline"]["base_dir"] + "/06-supportingreads/{sample}/{sample}.grouped.bam"
     threads: 2
     params:
-        fgbio = config["cappseq_snv_pipeline"]["fgbio_jar"],
+        #fgbio = config["cappseq_snv_pipeline"]["fgbio_jar"],
         ref_genome = config["cappseq_snv_pipeline"]["ref_genome"],
         outdir = config["cappseq_snv_pipeline"]["base_dir"] + "/06-supportingreads/{sample}/"
     conda:
@@ -142,7 +142,7 @@ rule review_consensus_reads:
     shell:
         """
         samtools sort -@ 2 {input.bam_uncons} > {output.tmp_sort} && samtools index -@ 2 {output.tmp_sort} &&
-        java -jar {params.fgbio} ReviewConsensusVariants --input {input.vcf} --consensus {input.bam_cons} --grouped-bam {output.tmp_sort} --ref {params.ref_genome} --output {params.outdir}/{wildcards.sample} --sample {wildcards.sample} 2>&1 > {log}
+        fgbio ReviewConsensusVariants --input {input.vcf} --consensus {input.bam_cons} --grouped-bam {output.tmp_sort} --ref {params.ref_genome} --output {params.outdir}/{wildcards.sample} --sample {wildcards.sample} 2>&1 > {log}
         """
 
 
@@ -153,7 +153,7 @@ rule vcf2maf_annotate:
         vep_vcf = temp(config["cappseq_snv_pipeline"]["base_dir"] + "/04-capturespace/{sample}.capspace.vep.vcf"),
         maf = config["cappseq_snv_pipeline"]["base_dir"] + "/05-MAFs/{sample}.sage.maf"
     params:
-        custom_enst = config["cappseq_snv_pipeline"]["custom_enst"],
+        custom_enst = os.path.join(config["cappseq_snv_pipeline"]["pipeline_dir"], "resources/custom_enst.hg38.txt"),
         vep_data = config["cappseq_snv_pipeline"]["vep_data"],
         centre = config["cappseq_snv_pipeline"]["centre"],
         normal_name = lambda w: normal_ids[w.sample],
@@ -183,8 +183,10 @@ rule augment_ssm:
     output:
         maf = config["cappseq_snv_pipeline"]["base_dir"] + "/08-augmentssm/{sample}.sage.augment.maf"
     threads: 2
+    conda:
+        "envs/augment_ssm.yaml"
     params:
-        script = "src/augment_ssm.py"
+        script = os.path.join(config["cappseq_snv_pipeline"]["pipeline_dir"], "src/augment_ssm.py")
     shell: """
     python {params.script} \
     --bam {input.bam} \
@@ -263,7 +265,7 @@ rule filter_maf:
         maf = config["cappseq_snv_pipeline"]["base_dir"] + "/99-final/{sample}.sage.blacklist.maf"
     params:
         exac_freq = float(config["cappseq_snv_pipeline"]["exac_max_freq"]),
-        blacklist = config["cappseq_snv_pipeline"]["blacklist"],
+        blacklist = os.path.join(config["cappseq_snv_pipeline"]["pipeline_dir"], "resources/capture-hg38.clean_blacklist.txt"),
         filter_cols = ["gnomAD_AF", "gnomAD_AFR_AF", "gnomAD_AMR_AF", "gnomAD_ASJ_AF", "gnomAD_EAS_AF", "gnomAD_FIN_AF", "gnomAD_NFE_AF", "gnomAD_OTH_AF", "gnomAD_SAS_AF"]
     run:
         # Load blacklist
@@ -307,8 +309,8 @@ rule igv_screenshot_variants:
         html = config["cappseq_snv_pipeline"]["base_dir"] + "/07-IGV/{sample}_report.html"
     params:
         refgenome = config["cappseq_snv_pipeline"]["ref_genome"],
-        cytoband = config["cappseq_snv_pipeline"]["cytoband"],
-        genes =  config["cappseq_snv_pipeline"]["genetrack"],
+        cytoband = os.path.join(config['cappseq_snv_pipeline']['pipeline_dir'], config["cappseq_snv_pipeline"]["cytoband"]),
+        genes =  os.path.join(config["cappseq_snv_pipeline"]['pipeline_dir'] , config["cappseq_snv_pipeline"]["genetrack"]),
         sample_name = lambda w: w.sample
     conda:
         "envs/igv.yaml"
@@ -322,5 +324,6 @@ rule igv_screenshot_variants:
 rule all:
     input:
         expand(rules.filter_maf.output.maf, sample = samples),
-        expand(rules.igv_screenshot_variants.output.html, sample=samples)
+        expand(rules.igv_screenshot_variants.output.html, sample=samples),
+        expand(rules.review_consensus_reads.output.grouped_bam, sample=samples)
     default_target: True
