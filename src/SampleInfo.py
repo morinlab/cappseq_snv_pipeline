@@ -101,10 +101,17 @@ class SampleInfo(object):
                     log.write(mesg + "\n")
                     warnings.warn(mesg + '\033[93m')
 
-            # check that the number of keys in out_dict equals the number of samples in the samplesheet
-            if len(out_dict.keys()) != len(samplesheet[sample_col].unique().tolist()):
-                warnings.warn(f"""For the samples in the {sample_col} column I found {len(out_dict.keys())} bams, but
-                    I was expecting {len(samplesheet[sample_col].unique().tolist())}.""" + "\N{loudly crying face}")
+            # check that the number of unique values in out_dict equals the number of samples in the samplesheet
+            # aka one path per sample and normal
+            values = set(out_dict.values())
+            values = list(values)
+            if len(values) != len(samplesheet[sample_col].unique().tolist()):
+                mesg2 = f"""For the samples in the {sample_col} column I found {len(out_dict.keys())} bams, but
+                    I was expecting {len(samplesheet[sample_col].unique().tolist())}.""" + "\N{loudly crying face}"
+                log.write(mesg2 + "\n")
+                warnings.warn(mesg2)
+
+            
         
         # write missing samples to tsv
         if len(missing_samples) > 0 and sample_col == "sample":

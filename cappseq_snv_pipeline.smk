@@ -22,6 +22,7 @@ SampleInfo = SI.SampleInfo(samplesheet,
 # can remove this by using object through out, do one day
 samples = SampleInfo.samples
 samplepaths = SampleInfo.samplepaths
+# the normal bam is tumour_sample : normal_bam_path
 normals = SampleInfo.normals
 normal_ids = SampleInfo.normal_ids
 sample_uncons = SampleInfo.sample_uncons
