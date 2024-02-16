@@ -10,6 +10,24 @@ class SampleInfo(object):
     Requires a samplesheet with columns "sample" and "normal"
     and a directory with bam files for tumour, UMI and normal samples.
 
+    Args:
+        samplesheet (pd.DataFrame): A pandas dataframe with columns "sample" and "normal".
+        tumour_bam_dir (str): The directory containing the tumour bam files.
+        umi_bam_dir (str): The directory containing the UMI bam files.
+        normal_bam_dir (str): The directory containing the normal bam files.
+
+    Attributes:
+    
+        samplesheet (pd.DataFrame): A pandas dataframe with columns "sample" and "normal".
+        tumour_bam_dir (str): The directory containing the tumour bam files.
+        umi_bam_dir (str): The directory containing the UMI bam files.
+        normal_bam_dir (str): The directory containing the normal bam files.
+        samples (list): A list of sample IDs.
+        samplepaths (dict): A dictionary with sample IDs as keys and tumour bam file paths as values.
+        sample_uncons (dict): A dictionary with sample IDs as keys and UMI bam file paths as values.
+        normals (dict): A dictionary with sample IDs as keys and normal bam file paths as values.
+        normal_ids (dict): A dictionary with sample IDs as keys and normal IDs as values.
+
     """
 
     def __init__(self, samplesheet, tumour_bam_dir: str, umi_bam_dir: str, normal_bam_dir: str):
@@ -30,26 +48,41 @@ class SampleInfo(object):
 
     def absoluteFilePaths(self, directory):
         """Yields all file paths in a directory,
-        as a generator object."""
+        as a generator object
+        
+        Args:
+            directory (str): The directory to search for files."""
         for dirpath,_,filenames in os.walk(directory):
             for f in filenames:
                 yield os.path.abspath(os.path.join(dirpath, f))
     
     def make_empty_log(self, log_name: str) -> None:
-        """Create an empty log file."""
+        """Create an empty log file.
+        
+        Args:
+            log_name (str): The name of the log file to create."""
         with open(log_name, "w") as log:
             log.write("")
 
     def find_bam_files(self, samplesheet: pd.DataFrame, targ_dir: str, sample_col: str = "sample") -> dict:
         """Find all BAM files in a directory for samples found in
         samplesheet. Outputs a dict of SampleID:Path pairs.
+
+        Also appends missing samples to a log file and warns the user about them in the console.
+
+        Args:
+            samplesheet (pd.DataFrame): A pandas dataframe with a column for sample IDs.
+            targ_dir (str): The directory to search for BAM files.
+            sample_col (str): The name of the column in samplesheet that contains the sample IDs.
+        
+        Returns:
+            dict: A dictionary with sample IDs as keys and BAM file paths as values.
         
         """
         # create a list that has all of the file paths in target directories
         bams_all = [path for path in self.absoluteFilePaths(targ_dir) if path.endswith(".bam")]
 
         out_dict = {}
-        missing_samples = []
         # start a log file to log missing samples, make it easier for user
         with open("missing_bams_log.txt", "a") as log:
             for i, row in samplesheet.iterrows():
@@ -71,6 +104,14 @@ class SampleInfo(object):
         return out_dict
 
     def create_normaldicts(self, samplesheet: pd.DataFrame) -> dict:
+        """Create a dictionary with sample IDs as keys and normal IDs as values.
+
+        Args:   
+            samplesheet (pd.DataFrame): A pandas dataframe with columns "sample" and "normal".
+
+        Returns:
+            dict: A dictionary with sample IDs as keys and normal IDs as values.
+        """
 
         normal_ids = {}
 
