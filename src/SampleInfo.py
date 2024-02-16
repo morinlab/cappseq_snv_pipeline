@@ -43,7 +43,7 @@ class SampleInfo(object):
         bams_all = [path for path in self.absoluteFilePaths(targ_dir) if path.endswith(".bam")]
 
         out_dict = {}
-
+        missing_samples = []
         for i, row in samplesheet.iterrows():
             for path in bams_all:
                 if row[sample_col] in path:
@@ -53,11 +53,10 @@ class SampleInfo(object):
             if row['sample'] not in out_dict.keys():
                 warnings.warn(f"{sample_col} called {row[sample_col]} not found in {targ_dir}")
 
-
-
         # check that the number of keys in out_dict equals the number of samples in the samplesheet
         if len(out_dict.keys()) != len(samplesheet[sample_col].unique().tolist()):
-            raise e.FunkyNumberofBams(sample_col, len(out_dict.keys()), len(samplesheet[sample_col].unique().tolist()))
+            warnings.warn(f"""For the samples in the {sample_col} column I found {len(out_dict.keys())} bams, but
+                I was expecting {len(samplesheet[sample_col].unique().tolist())}.""" + "\N{loudly crying face}")
 
         return out_dict
 
