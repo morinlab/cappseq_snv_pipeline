@@ -1,6 +1,5 @@
 import os
 import pandas as pd
-import src.exceptions as e
 import warnings
 warnings.simplefilter("always")
 
@@ -20,6 +19,8 @@ class SampleInfo(object):
         self.umi_bam_dir = umi_bam_dir
         self.normal_bam_dir = normal_bam_dir
         self.samples = samplesheet["sample"].tolist()
+        # make empty log file to be filled with missing samples
+        self.make_empty_log("missing_bams_log.txt")
         # find paths to bam files
         self.samplepaths = self.find_bam_files(self.samplesheet, self.tumour_bam_dir)
         self.sample_uncons = self.find_bam_files(self.samplesheet, self.umi_bam_dir)
@@ -33,6 +34,11 @@ class SampleInfo(object):
         for dirpath,_,filenames in os.walk(directory):
             for f in filenames:
                 yield os.path.abspath(os.path.join(dirpath, f))
+    
+    def make_empty_log(self, log_name: str) -> None:
+        """Create an empty log file."""
+        with open(log_name, "w") as log:
+            log.write("")
 
     def find_bam_files(self, samplesheet: pd.DataFrame, targ_dir: str, sample_col: str = "sample") -> dict:
         """Find all BAM files in a directory for samples found in
@@ -44,19 +50,23 @@ class SampleInfo(object):
 
         out_dict = {}
         missing_samples = []
-        for i, row in samplesheet.iterrows():
-            for path in bams_all:
-                if row[sample_col] in path:
-                    out_dict[row['sample']] = path
-            # test if a dict key exists for each sample in the samplesheet
-            
-            if row['sample'] not in out_dict.keys():
-                warnings.warn(f"{sample_col} called {row[sample_col]} not found in {targ_dir}")
+        # start a log file to log missing samples, make it easier for user
+        with open("missing_bams_log.txt", "a") as log:
+            for i, row in samplesheet.iterrows():
+                for path in bams_all:
+                    if row[sample_col] in path:
+                        out_dict[row['sample']] = path
+                # test if a dict key exists for each sample in the samplesheet
+                
+                if row['sample'] not in out_dict.keys():
+                    mesg = f"{sample_col} called {row[sample_col]} not found in {targ_dir}"
+                    log.write(mesg + "\n")
+                    warnings.warn(mesg)
 
-        # check that the number of keys in out_dict equals the number of samples in the samplesheet
-        if len(out_dict.keys()) != len(samplesheet[sample_col].unique().tolist()):
-            warnings.warn(f"""For the samples in the {sample_col} column I found {len(out_dict.keys())} bams, but
-                I was expecting {len(samplesheet[sample_col].unique().tolist())}.""" + "\N{loudly crying face}")
+            # check that the number of keys in out_dict equals the number of samples in the samplesheet
+            if len(out_dict.keys()) != len(samplesheet[sample_col].unique().tolist()):
+                warnings.warn(f"""For the samples in the {sample_col} column I found {len(out_dict.keys())} bams, but
+                    I was expecting {len(samplesheet[sample_col].unique().tolist())}.""" + "\N{loudly crying face}")
 
         return out_dict
 
