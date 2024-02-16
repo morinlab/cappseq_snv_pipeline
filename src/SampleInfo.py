@@ -36,15 +36,18 @@ class SampleInfo(object):
         self.tumour_bam_dir = tumour_bam_dir
         self.umi_bam_dir = umi_bam_dir
         self.normal_bam_dir = normal_bam_dir
-        self.samples = samplesheet["sample"].tolist()
+
         # make empty log file to be filled with missing samples
         self.make_empty_log("missing_bams_log.txt")
         # find paths to bam files
         self.samplepaths = self.find_bam_files(self.samplesheet, self.tumour_bam_dir)
         self.sample_uncons = self.find_bam_files(self.samplesheet, self.umi_bam_dir)
         self.normals = self.find_bam_files(self.samplesheet, self.normal_bam_dir, sample_col="normal")
+        # make sample list from samplepaths keys
+        self.samples = list(self.samplepaths.keys())
         # sampleID : NormalID dict
         self.normal_ids = self.create_normaldicts(self.samplesheet)
+        self.print_warnings()
 
     def absoluteFilePaths(self, directory):
         """Yields all file paths in a directory,
@@ -83,6 +86,7 @@ class SampleInfo(object):
         bams_all = [path for path in self.absoluteFilePaths(targ_dir) if path.endswith(".bam")]
 
         out_dict = {}
+        missing_samples = []
         # start a log file to log missing samples, make it easier for user
         with open("missing_bams_log.txt", "a") as log:
             for i, row in samplesheet.iterrows():
@@ -92,17 +96,28 @@ class SampleInfo(object):
                 # test if a dict key exists for each sample in the samplesheet
                 
                 if row['sample'] not in out_dict.keys():
+                    missing_samples.append(row[sample_col])
                     mesg = f"{sample_col} called {row[sample_col]} not found in {targ_dir}"
                     log.write(mesg + "\n")
                     warnings.warn(mesg + '\033[93m')
-
 
             # check that the number of keys in out_dict equals the number of samples in the samplesheet
             if len(out_dict.keys()) != len(samplesheet[sample_col].unique().tolist()):
                 warnings.warn(f"""For the samples in the {sample_col} column I found {len(out_dict.keys())} bams, but
                     I was expecting {len(samplesheet[sample_col].unique().tolist())}.""" + "\N{loudly crying face}")
+        
+        # write missing samples to tsv
+        if len(missing_samples) > 0 and sample_col == "sample":
+            pd.DataFrame(missing_samples, columns=["missing_samples"]).to_csv("missing_samples.tsv", sep="\t", index=False)
+        elif len(missing_samples) > 0 and sample_col == "normal":
+            pd.DataFrame(missing_samples, columns=["missing_normals"]).to_csv("missing_normals.tsv", sep="\t", index=False)
 
         return out_dict
+    
+    def print_warnings(self) -> None:
+        print("""All warnings about missing samples were written to a log file called 'missing_bams_log.txt'.
+        Lists of missing sample and normal IDs were written to 'missing_samples.tsv' and
+              'missing_normals.tsv'.""")
 
     def create_normaldicts(self, samplesheet: pd.DataFrame) -> dict:
         """Create a dictionary with sample IDs as keys and normal IDs as values.
