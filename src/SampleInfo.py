@@ -94,7 +94,8 @@ class SampleInfo(object):
                 if row['sample'] not in out_dict.keys():
                     mesg = f"{sample_col} called {row[sample_col]} not found in {targ_dir}"
                     log.write(mesg + "\n")
-                    warnings.warn(mesg)
+                    warnings.warn(mesg + '\033[93m')
+
 
             # check that the number of keys in out_dict equals the number of samples in the samplesheet
             if len(out_dict.keys()) != len(samplesheet[sample_col].unique().tolist()):
