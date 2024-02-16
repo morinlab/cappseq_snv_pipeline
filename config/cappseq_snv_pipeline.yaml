@@ -14,7 +14,7 @@ cappseq_snv_pipeline:
     # SAGE specific parameters
     hotspots_vcf: "resources/KnownHotspots.vcf.gz"
     capture_space: "__UPDATE__"
-    ensembl: "resources/ensembl_cache/38/"
+    ensembl: "resources/ensembl_data_cache/38/"
     unmatched_normal: "__UPDATE__"
     max_depth: "100000"
     min_map_qual: "40"

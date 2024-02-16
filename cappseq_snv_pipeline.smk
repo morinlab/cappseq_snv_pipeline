@@ -40,7 +40,7 @@ rule run_sage:
         # Panel regions
         hotspots_vcf = os.path.join(config["cappseq_snv_pipeline"]["pipeline_dir"], "resources/KnownHotspots.vcf.gz"),
         panel_regions = config["cappseq_snv_pipeline"]["capture_space"],
-        ensembl = os.path.join(config["cappseq_snv_pipeline"]["pipeline_dir"], "resources/ensembl_cache/38/"),
+        ensembl = os.path.join(config["cappseq_snv_pipeline"]["pipeline_dir"], config['cappseq_snv_pipeline']['ensembl']),
         # Miscellaneous
         normal_name = lambda w: normal_ids[w.sample],
         max_depth = config["cappseq_snv_pipeline"]["max_depth"],

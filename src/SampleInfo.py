@@ -1,6 +1,8 @@
 import os
 import pandas as pd
 import src.exceptions as e
+import warnings
+warnings.simplefilter("always")
 
 class SampleInfo(object):
     """Object that takes a minimal input from user
@@ -42,15 +44,20 @@ class SampleInfo(object):
 
         out_dict = {}
 
-        for path in bams_all:
-            for i, row in samplesheet.iterrows():
+        for i, row in samplesheet.iterrows():
+            for path in bams_all:
                 if row[sample_col] in path:
                     out_dict[row['sample']] = path
+            # test if a dict key exists for each sample in the samplesheet
+            
+            if row['sample'] not in out_dict.keys():
+                warnings.warn(f"{sample_col} called {row[sample_col]} not found in {targ_dir}")
+
 
 
         # check that the number of keys in out_dict equals the number of samples in the samplesheet
         if len(out_dict.keys()) != len(samplesheet[sample_col].unique().tolist()):
-            raise e.FunkyNumberofBams(sample_col, len(out_dict.keys()))
+            raise e.FunkyNumberofBams(sample_col, len(out_dict.keys()), len(samplesheet[sample_col].unique().tolist()))
 
         return out_dict
 
