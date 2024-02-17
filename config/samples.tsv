@@ -1,7 +1,6 @@
 
-# Sample list should be a four column TSV with 
-# sample_name	/path/to/sample.consensus.bam	/path/to/sample.umigrouped.bam    /path/to/normal.bam
-# Where the former BAM is the one on which variant calling is performed, and the latter
-# is the output of fgbio GroupReadsByUMI's step. 
-# The latter BAM is used to generate review IGV screenshots of variants.
-# Comment lines must start with # and are ignored (see this entire preramble)
+# Sample list should be a two column TSV with 
+# sample_name	matched_normal_name
+# The script src/SampleInfo.py will look for the paths
+# to the required bam files in the directories you pointed
+# it to in the config
