@@ -133,7 +133,6 @@ rule review_consensus_reads:
         grouped_bam = os.path.join(config["cappseq_snv_pipeline"]["base_dir"], "06-supportingreads/{sample}/{sample}.grouped.bam")
     threads: 2
     params:
-        #fgbio = config["cappseq_snv_pipeline"]["fgbio_jar"],
         ref_genome = config["cappseq_snv_pipeline"]["ref_genome"],
         outdir = os.path.join(config["cappseq_snv_pipeline"]["base_dir"], "06-supportingreads/{sample}/")
     conda:

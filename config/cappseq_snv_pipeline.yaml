@@ -8,14 +8,14 @@ cappseq_snv_pipeline:
     tumour_bam_dir: "__UPDATE__"
     umi_bam_dir: "__UPDATE__"
     normal_bam_dir: "__UPDATE__"
+    # ie where is the repo
     pipeline_dir: "__UPDATE__"
 
 
     # SAGE specific parameters
     hotspots_vcf: "resources/KnownHotspots.vcf.gz"
     capture_space: "__UPDATE__"
-    ensembl: "resources/ensembl_data_cache/38/"
-    unmatched_normal: "__UPDATE__"
+    ensembl: "__UPDATE__" # see readme
     max_depth: "100000"
     min_map_qual: "40"
     tumor_min_vaf: "0.008"
@@ -25,11 +25,6 @@ cappseq_snv_pipeline:
     custom_enst: "resources/custom_enst.hg38.txt"
     vep_data: "__UPDATE__"
     centre: "morin_lab"
-
-    # fgbio executable, pulled and compiled from GitHub
-    # as the current version on bioconda has a bug in
-    # ReviewConsensusVariants
-    fgbio_jar: "__UPDATE__"
 
     # Mask positions with a high incidence of N bases
     mask_script: "src/mask_n_sites.py"
